@@ -77,13 +77,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # multi-arch build (arm64 is emulated and slow): only when publishing
       - name: Build and push
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v7
         with:
           context: .
           target: release
           platforms: ${{ env.PLATFORMS }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
