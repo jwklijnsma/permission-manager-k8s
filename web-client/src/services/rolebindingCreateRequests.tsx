@@ -154,7 +154,7 @@ export class RolebindingCreateRequests {
         clusterRolebindingName: clusterRolebindingName,
         // addGeneratedForUser: false,
         template: allNamespaceRolebinding.template,
-        // username: params.username,
+        username: username,
         subjects: subjects
       })
 
@@ -200,8 +200,7 @@ export class RolebindingCreateRequests {
     await this.clusterRolebinding({
       template: roleName,
       clusterRolebindingName: clusterRolebindingName,
-      // username: params.username,
-      // addGeneratedForUser: false,
+      username: username,
       subjects: subjects
     });
 

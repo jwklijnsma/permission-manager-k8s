@@ -1,6 +1,7 @@
 import React from 'react'
 import {templateNamespacedResourceRolePrefix} from '../constants'
 import {RuleSet} from "./types";
+import {grantsRead, grantsWrite} from "../services/verbs";
 
 interface TemplateInfoParameters {
  readonly ruleSets: RuleSet[];
@@ -33,11 +34,9 @@ export default function TemplateInfo({ruleSets, hideNamespaceCol}: TemplateInfoP
           return rules.map((rule, index) => {
             return (
               <React.Fragment key={index}>
-                {rule.resources.map((res, i) => {
-                  const r =
-                    rule.verbs.includes('*') || rule.verbs.includes('read')
-                  const rw =
-                    rule.verbs.includes('*') || rule.verbs.includes('create')
+                {(rule.resources || []).map((res, i) => {
+                  const r = grantsRead(rule.verbs)
+                  const rw = grantsWrite(rule.verbs)
                   return (
                     <tr
                       key={i}
