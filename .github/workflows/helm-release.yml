@@ -1,0 +1,60 @@
+name: helm-release
+
+# Publishes the Helm chart as an OCI artifact when a "helm-chart-vX.Y.Z" tag is pushed:
+#   helm install permission-manager oci://ghcr.io/<owner>/charts/permission-manager --version X.Y.Z
+# The Artifact Hub repository metadata (helm_chart/artifacthub-repo.yml) is pushed next to it,
+# so the chart can be indexed on https://artifacthub.io (issue #189): add an "OCI" Helm
+# repository there with the URL oci://ghcr.io/<owner>/charts/permission-manager.
+on:
+  push:
+    tags: ["helm-chart-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # GitHub release
+  packages: write   # push to ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io/${{ github.repository_owner }}/charts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - uses: oras-project/setup-oras@v1
+
+      - name: Check the tag matches Chart.yaml
+        id: chart
+        run: |
+          version=$(yq e '.version' helm_chart/Chart.yaml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "helm-chart-v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match helm_chart/Chart.yaml version ${version}"; exit 1
+          fi
+
+      - name: Package
+        run: helm package helm_chart --destination dist
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push chart
+        run: helm push "dist/permission-manager-${{ steps.chart.outputs.version }}.tgz" "oci://${REGISTRY}"
+
+      - name: Push Artifact Hub metadata
+        working-directory: helm_chart
+        run: |
+          oras push "${REGISTRY}/permission-manager:artifacthub.io" \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "dist/permission-manager-${{ steps.chart.outputs.version }}.tgz" \
+            --title "Helm Chart v${{ steps.chart.outputs.version }}" --notes "oci://${REGISTRY}/permission-manager --version ${{ steps.chart.outputs.version }}"

@@ -1,0 +1,136 @@
+name: ci
+
+# Unit tests and static checks for every push and pull request:
+#   - go:         go vet + go test (race detector, coverage) + build of the server
+#   - web-client: TypeScript type check, Jest unit tests, production build
+#   - helm:       helm lint + helm template for the supported values combinations
+#   - shell:      shellcheck of the scripts
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+          cache-dependency-path: go.sum
+      # static/static.go embeds the web-client build: a placeholder is enough for the unit tests
+      - name: Placeholder web-client build
+        run: mkdir -p static/build && echo '<!doctype html><title>permission-manager</title>' > static/build/index.html
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal static)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-ed:"; echo "$unformatted"; exit 1
+          fi
+      - run: go vet ./...
+      - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Coverage summary
+        run: |
+          {
+            echo '### Go coverage'
+            echo '```'
+            go tool cover -func=coverage.out | tail -n 1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: go build -o /dev/null ./cmd/run-server.go
+      - uses: actions/upload-artifact@v5
+        with:
+          name: go-coverage
+          path: coverage.out
+
+  web-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-client
+    env:
+      # react-scripts 3 (webpack 4) needs the legacy OpenSSL provider on Node >= 17
+      NODE_OPTIONS: --openssl-legacy-provider
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: web-client/yarn.lock
+      - run: yarn install --frozen-lockfile --ignore-engines
+      - name: Type check
+        run: npx tsc --noEmit -p .
+      - name: Unit tests
+        run: yarn test --watchAll=false --coverage
+      - name: Build
+        # CI=true turns lint warnings into errors in react-scripts build; the existing code has warnings
+        run: CI=false yarn build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: |
+          helm lint helm_chart --strict \
+            --set config.clusterName=ci --set config.controlPlaneAddress=https://k8s.example.com:6443 \
+            --set config.basicAuthPassword=ci
+      - name: helm template (default values)
+        run: |
+          helm template pm helm_chart --kube-version 1.34.0 \
+            --set config.clusterName=ci --set config.controlPlaneAddress=https://k8s.example.com:6443 \
+            --set config.basicAuthPassword=ci > default.yaml
+          grep -q 'kind: Secret' default.yaml
+          grep -q 'BASIC_AUTH_PASSWORD: "ci"' default.yaml
+          grep -q 'image: "ghcr.io/jwklijnsma/permission-manager-k8s:v' default.yaml
+          grep -q 'checksum/secret' default.yaml
+      - name: helm template (existingSecret, basic auth disabled, extra subjects, tokenrequest)
+        run: |
+          helm template pm helm_chart --kube-version 1.34.0 \
+            --set existingSecret=my-secret \
+            --set config.basicAuthEnabled=false \
+            --set 'config.additionalSubjectKinds={User,Group}' \
+            --set config.kubeconfig.tokenMode=tokenrequest \
+            --set config.kubeconfig.tokenExpiration=24h \
+            --set ingress.enabled=true --set ingress.className=nginx > custom.yaml
+          ! grep -q 'kind: Secret' custom.yaml
+          grep -q 'name: my-secret' custom.yaml
+          grep -A1 'name: BASIC_AUTH_DISABLED' custom.yaml | grep -q '"true"'
+          grep -A1 'name: ADDITIONAL_SUBJECT_KINDS' custom.yaml | grep -q '"User,Group"'
+          grep -A1 'name: KUBECONFIG_TOKEN_MODE' custom.yaml | grep -q '"tokenrequest"'
+          grep -q 'ingressClassName: nginx' custom.yaml
+      - name: helm template (secret annotations)
+        run: |
+          helm template pm helm_chart \
+            --set config.clusterName=ci --set config.controlPlaneAddress=https://k8s.example.com:6443 \
+            --set config.basicAuthPassword=ci \
+            --set 'secret.annotations.reloader\.stakater\.com/match=true' > annotations.yaml
+          grep -q 'reloader.stakater.com/match: "true"' annotations.yaml
+      - name: Required values are enforced
+        run: |
+          if helm template pm helm_chart --set config.clusterName=ci --set config.controlPlaneAddress=https://x >/dev/null 2>&1; then
+            echo "::error::rendering without basicAuthPassword must fail while basic auth is enabled"; exit 1
+          fi
+      - name: Validate the rendered manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.34.0 default.yaml custom.yaml annotations.yaml
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck scripts/*.sh

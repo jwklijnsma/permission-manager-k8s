@@ -1,0 +1,90 @@
+name: docker
+
+# Builds the container image (web-client + Go server) on every PR and publishes it to
+# ghcr.io/<owner>/permission-manager-k8s from main (tag "main" + sha) and from version tags
+# (vX.Y.Z -> X.Y.Z, X.Y and vX.Y.Z, the format used by the Helm chart image.tag default).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths: [Dockerfile, cmd/**, internal/**, static/**, web-client/**, go.mod, go.sum, .github/workflows/docker.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/permission-manager-k8s
+  PLATFORMS: linux/amd64,linux/arm64
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern=v{{version}}
+            type=sha,prefix=sha-
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: release
+          platforms: linux/amd64
+          load: true
+          tags: permission-manager:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          # without configuration the server must refuse to start (fail closed)
+          if docker run --rm permission-manager:test; then
+            echo "::error::the server started without configuration"; exit 1
+          fi
+          docker run --rm -e PORT=4000 -e CLUSTER_NAME=ci -e CONTROL_PLANE_ADDRESS=https://x -e NAMESPACE=pm \
+            -e BASIC_AUTH_DISABLED=maybe permission-manager:test 2>&1 | tee out.txt || true
+          grep -q "BASIC_AUTH_DISABLED must be a boolean" out.txt
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: release
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
