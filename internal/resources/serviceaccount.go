@@ -4,13 +4,19 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"log"
-	"sighupio/permission-manager/internal/config"
-	"strings"
 	"time"
 
+	"sighupio/permission-manager/internal/config"
+
+	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// rootCAConfigMapName is the ConfigMap published by kube-controller-manager in every namespace
+// (Kubernetes >= 1.20) containing the CA bundle used to verify the API server.
+const rootCAConfigMapName = "kube-root-ca.crt"
 
 func (r *Manager) ServiceAccountGet(namespace, name string) (*v1.ServiceAccount, error) {
 	return r.kubeclient.CoreV1().ServiceAccounts(namespace).Get(r.context, name, metav1.GetOptions{})
@@ -24,81 +30,198 @@ func (r *Manager) ServiceAccountCreate(namespace, name string) (*v1.ServiceAccou
 	}, metav1.CreateOptions{})
 }
 
-// ServiceAccountCreateKubeConfigForUser Creates a ServiceAccount for the user and returns the KubeConfig with its token
-func (r *Manager) ServiceAccountCreateKubeConfigForUser(cluster config.ClusterConfig, username, kubeConfigNamespace string) (kubeconfigYAML string) {
+// ServiceAccountDelete removes the ServiceAccount of a user and its token Secret (if any).
+// Deleting the ServiceAccount invalidates every token issued for it, so kubeconfigs that were
+// handed out for a deleted user stop working. Missing objects are not an error.
+func (r *Manager) ServiceAccountDelete(namespace, name string) error {
+	err := r.kubeclient.CoreV1().Secrets(namespace).Delete(r.context, name, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("deleting token secret %s/%s: %w", namespace, name, err)
+	}
 
+	err = r.kubeclient.CoreV1().ServiceAccounts(namespace).Delete(r.context, name, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("deleting service account %s/%s: %w", namespace, name, err)
+	}
+
+	return nil
+}
+
+// ServiceAccountCreateKubeConfigForUser ensures a ServiceAccount exists for the user and returns a
+// kubeconfig authenticating as that ServiceAccount.
+//
+// Since Kubernetes 1.24 token Secrets are no longer generated automatically for ServiceAccounts
+// (issue #168). Depending on kc.TokenMode the token is obtained either from an explicitly created
+// "kubernetes.io/service-account-token" Secret (non-expiring, default) or from the TokenRequest
+// API (time-bound, kc.TokenExpiration).
+func (r *Manager) ServiceAccountCreateKubeConfigForUser(cluster config.ClusterConfig, kc config.KubeconfigConfig, username, kubeConfigNamespace string) (string, error) {
 	serviceAccountNamespace := cluster.Namespace
 
-	var serviceAccount *v1.ServiceAccount = nil
-	var accountSecret *v1.Secret = nil
-	var err error
-
-	/****  handle service account start ****/
-	serviceAccount, err = r.ServiceAccountGet(serviceAccountNamespace, username)
+	serviceAccount, err := r.ensureServiceAccount(serviceAccountNamespace, username)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			serviceAccount = nil
-		} else {
-			log.Printf("Inital get secret failed: %v", err)
-		}
+		return "", err
 	}
 
-	if serviceAccount == nil {
-		serviceAccount, err = r.ServiceAccountCreate(serviceAccountNamespace, username)
-		time.Sleep(2 * time.Second)
+	var token string
+	var ca []byte
+
+	switch kc.TokenMode {
+	case config.TokenModeTokenRequest:
+		token, err = r.requestToken(serviceAccountNamespace, username, kc.TokenExpiration)
 		if err != nil {
-			log.Printf("Service Account not created: %v", err)
+			return "", err
+		}
+	default:
+		token, ca, err = r.serviceAccountSecretToken(serviceAccountNamespace, serviceAccount)
+		if err != nil {
+			return "", err
 		}
 	}
-	/****  handle service account end ****/
 
-	/****  handle service account's secret ****/
-	accountSecret, err = r.SecretGet(serviceAccountNamespace, username)
+	if len(ca) == 0 {
+		ca, err = r.clusterCA(serviceAccountNamespace)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return renderKubeconfig(cluster, username, kubeConfigNamespace, ca, token), nil
+}
+
+func (r *Manager) ensureServiceAccount(namespace, name string) (*v1.ServiceAccount, error) {
+	sa, err := r.ServiceAccountGet(namespace, name)
+	if err == nil {
+		return sa, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("getting service account %s/%s: %w", namespace, name, err)
+	}
+
+	sa, err = r.ServiceAccountCreate(namespace, name)
+	if apierrors.IsAlreadyExists(err) {
+		return r.ServiceAccountGet(namespace, name)
+	}
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			accountSecret = nil
-		} else {
-			log.Printf("Inital get secret failed: %v", err)
-		}
+		return nil, fmt.Errorf("creating service account %s/%s: %w", namespace, name, err)
 	}
 
-	// if user delete the secret of the account this will allow generate a new one as well)
-	if accountSecret == nil {
-		// create secrete for the service account
-		var secret = new(v1.Secret)
-		secret.SetName(username)
-		// ensure the name and the uid match to the account name and account uid, which will be used for authentication by the k8s
-		secret.SetAnnotations(map[string]string{
-			"kubernetes.io/service-account.name": username,
-			"kubernetes.io/service-account.uid":  string(serviceAccount.GetUID()),
+	return sa, nil
+}
+
+// serviceAccountSecretToken returns the token (and CA) stored in the token Secret of the
+// ServiceAccount, creating the Secret when missing and waiting for the token controller to
+// populate it.
+func (r *Manager) serviceAccountSecretToken(namespace string, sa *v1.ServiceAccount) (string, []byte, error) {
+	name := sa.GetName()
+
+	secret, err := r.getSecretIfExists(namespace, name)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// the Secret belongs to a previous incarnation of the ServiceAccount: recreate it
+	if secret != nil && sa.GetUID() != "" && secret.Annotations[v1.ServiceAccountUIDKey] != string(sa.GetUID()) {
+		log.Printf("token secret %s/%s is bound to another service account uid, recreating it", namespace, name)
+		err = r.kubeclient.CoreV1().Secrets(namespace).Delete(r.context, name, metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return "", nil, fmt.Errorf("deleting stale token secret %s/%s: %w", namespace, name, err)
+		}
+		secret = nil
+	}
+
+	if secret != nil && secret.Type != v1.SecretTypeServiceAccountToken {
+		return "", nil, fmt.Errorf("secret %s/%s exists but is not of type %s", namespace, name, v1.SecretTypeServiceAccountToken)
+	}
+
+	if secret == nil {
+		_, err = r.SecretCreate(namespace, &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				// the token controller fills the Secret only if name and uid match the ServiceAccount
+				Annotations: map[string]string{
+					v1.ServiceAccountNameKey: name,
+					v1.ServiceAccountUIDKey:  string(sa.GetUID()),
+				},
+			},
+			Type: v1.SecretTypeServiceAccountToken,
 		})
-
-		// type kubernetes.io/service-account-token will automatically map the root.ca and create a token to the Data of service account
-		secret.Type = "kubernetes.io/service-account-token"
-		// create secreat
-		_, err = r.SecretCreate(serviceAccountNamespace, secret)
-
-		if err != nil {
-			log.Printf("Account Secret not created: %v", err)
-		}
-
-		// try 10 times with 0.5 second interval (to wait for k8s fill the data to the newly created Secret)
-		for i := 1; i <= 10; i++ {
-			accountSecret, err = r.SecretGet(serviceAccountNamespace, username)
-			if err != nil {
-				log.Printf("Get Secret for account %v failed, : %v", username, err)
-				break
-			}
-
-			if accountSecret.Data["ca.crt"] != nil {
-				break
-			}
-			time.Sleep(500 * time.Millisecond)
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			return "", nil, fmt.Errorf("creating token secret %s/%s: %w", namespace, name, err)
 		}
 	}
-	/****  handle service account's end ****/
 
-	certificateTpl := `---
+	deadline := time.Now().Add(r.tokenWaitTimeout)
+	for {
+		secret, err = r.getSecretIfExists(namespace, name)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if secret != nil && len(secret.Data[v1.ServiceAccountTokenKey]) > 0 {
+			return string(secret.Data[v1.ServiceAccountTokenKey]), secret.Data[v1.ServiceAccountRootCAKey], nil
+		}
+
+		if err := r.context.Err(); err != nil {
+			return "", nil, err
+		}
+
+		if time.Now().After(deadline) {
+			return "", nil, fmt.Errorf("timed out after %s waiting for the token of secret %s/%s to be populated "+
+				"(is the service account token controller running?)", r.tokenWaitTimeout, namespace, name)
+		}
+
+		time.Sleep(r.tokenPollInterval)
+	}
+}
+
+func (r *Manager) getSecretIfExists(namespace, name string) (*v1.Secret, error) {
+	secret, err := r.SecretGet(namespace, name)
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting secret %s/%s: %w", namespace, name, err)
+	}
+	return secret, nil
+}
+
+// requestToken mints a time-bound token for the ServiceAccount using the TokenRequest API.
+func (r *Manager) requestToken(namespace, name string, expiration time.Duration) (string, error) {
+	expirationSeconds := int64(expiration.Seconds())
+
+	tr, err := r.kubeclient.CoreV1().ServiceAccounts(namespace).CreateToken(r.context, name, &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			ExpirationSeconds: &expirationSeconds,
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("requesting token for service account %s/%s: %w", namespace, name, err)
+	}
+
+	if tr == nil || tr.Status.Token == "" {
+		return "", fmt.Errorf("the TokenRequest API returned an empty token for service account %s/%s", namespace, name)
+	}
+
+	return tr.Status.Token, nil
+}
+
+// clusterCA returns the API server CA bundle published in the kube-root-ca.crt ConfigMap.
+func (r *Manager) clusterCA(namespace string) ([]byte, error) {
+	cm, err := r.kubeclient.CoreV1().ConfigMaps(namespace).Get(r.context, rootCAConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting configmap %s/%s: %w", namespace, rootCAConfigMapName, err)
+	}
+
+	ca := cm.Data[v1.ServiceAccountRootCAKey]
+	if ca == "" {
+		return nil, fmt.Errorf("configmap %s/%s has no %s key", namespace, rootCAConfigMapName, v1.ServiceAccountRootCAKey)
+	}
+
+	return []byte(ca), nil
+}
+
+func renderKubeconfig(cluster config.ClusterConfig, username, namespace string, ca []byte, token string) string {
+	tpl := `---
 apiVersion: v1
 kind: Config
 current-context: %s@%s
@@ -118,18 +241,18 @@ users:
     user:
       token: %s`
 
-	return fmt.Sprintf(certificateTpl,
+	return fmt.Sprintf(tpl,
 		username,
 		cluster.Name,
-		b64.StdEncoding.EncodeToString(accountSecret.Data["ca.crt"]),
+		b64.StdEncoding.EncodeToString(ca),
 		cluster.ControlPlaneAddress,
 		cluster.Name,
 		cluster.Name,
 		username,
-		kubeConfigNamespace,
+		namespace,
 		username,
 		cluster.Name,
 		username,
-		accountSecret.Data["token"],
+		token,
 	)
 }

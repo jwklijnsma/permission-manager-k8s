@@ -30,7 +30,9 @@ func (c *AppContext) validateAndBindRequest(r interface{}) error {
 	}
 
 	if err := c.Validate(r); err != nil {
-		return c.errorResponse(err.Error())
+		// return an error (instead of writing the response and returning nil) so that the
+		// handler stops here and does not act on an invalid request
+		return echo.NewHTTPError(http.StatusBadRequest, ErrorRes{Error: err.Error()})
 	}
 
 	return nil

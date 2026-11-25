@@ -76,11 +76,13 @@ func createRoleBinding(c echo.Context) error {
 		return err
 	}
 
-	// This is only a workaround: https://github.com/sighupio/permission-manager/issues/140
-	var subjs []rbacv1.Subject
-	for _, s := range r.Subjects {
-		s.Namespace = ac.Config.Cluster.Namespace
-		subjs = append(subjs, s)
+	if !isValidRoleKind(r.RoleKind) {
+		return ac.errorResponse("roleKind must be ClusterRole or Role")
+	}
+
+	subjs, err := normalizeSubjects(r.Subjects, ac.Config.Cluster.Namespace, ac.Config.RBAC.AdditionalSubjectKinds)
+	if err != nil {
+		return ac.errorResponse(err.Error())
 	}
 
 	_, err = ac.ResourceManager.RoleBindingCreate(r.Namespace, r.Username, resources.RoleBindingRequirements{

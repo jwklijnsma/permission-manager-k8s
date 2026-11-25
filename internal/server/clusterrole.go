@@ -29,7 +29,6 @@ func createClusterRole(c echo.Context) error {
 	return ac.okResponse()
 }
 
-
 func deleteClusterRole(c echo.Context) error {
 	ac := c.(*AppContext)
 	type Request struct {

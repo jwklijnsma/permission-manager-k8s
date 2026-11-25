@@ -37,11 +37,9 @@ func (r *Manager) ClusterRoleBindingLegacyCheck(username string) (clusterRoleBin
 		return nil, err
 	}
 
-	for _, clusterRoleBinding := range (*clusterRoleBindings).Items {
-		for _, crbSubjects := range clusterRoleBinding.Subjects {
-			if crbSubjects.Name == username && crbSubjects.Kind == "User" {
-				clusterRoleBindingToMigrate = &clusterRoleBinding
-			}
+	for i := range clusterRoleBindings.Items {
+		if isLegacyBinding(clusterRoleBindings.Items[i].Subjects, username) {
+			clusterRoleBindingToMigrate = &clusterRoleBindings.Items[i]
 		}
 	}
 
