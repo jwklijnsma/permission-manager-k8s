@@ -7,7 +7,7 @@ kindV1Alpha4Cluster:
   name: permission-manager-kind
   nodes:
     - role: control-plane
-      image: kindest/node:v1.21.2
+      image: kindest/node:v1.34.0
       extraPortMappings:
         - containerPort: 30080
           hostPort: 80

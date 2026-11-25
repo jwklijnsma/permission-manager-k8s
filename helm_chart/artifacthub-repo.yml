@@ -1,0 +1,9 @@
+# Artifact Hub repository metadata (issue #189).
+# Pushed next to the chart in the OCI registry by .github/workflows/release.yml:
+#   oci://ghcr.io/jwklijnsma/charts/permission-manager:artifacthub.io
+# Fill in repositoryID after adding the repository on https://artifacthub.io to get the
+# "Verified publisher" badge.
+repositoryID: ""
+owners:
+  - name: jwklijnsma
+    email: ""

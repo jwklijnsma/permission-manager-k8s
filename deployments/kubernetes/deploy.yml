@@ -32,7 +32,7 @@ spec:
       serviceAccountName: permission-manager
       containers:
         - name: permission-manager
-          image: quay.io/sighup/permission-manager:v1.9.0
+          image: ghcr.io/jwklijnsma/permission-manager-k8s:v1.10.0
           ports:
             - containerPort: 4000
           env:
@@ -74,6 +74,18 @@ rules:
       - "serviceaccounts"
       - "secrets"
     verbs: ["get", "list", "create", "update", "delete", "watch"]
+  # Mint time-bound tokens for the users' ServiceAccounts (KUBECONFIG_TOKEN_MODE=tokenrequest)
+  - apiGroups: [""]
+    resources:
+      - "serviceaccounts/token"
+    verbs: ["create"]
+  # Read the API server CA bundle published in every namespace
+  - apiGroups: [""]
+    resources:
+      - "configmaps"
+    resourceNames:
+      - "kube-root-ca.crt"
+    verbs: ["get"]
   # Allow full management of certificates CSR, including their approval
   - apiGroups: ["certificates.k8s.io"]
     resources:

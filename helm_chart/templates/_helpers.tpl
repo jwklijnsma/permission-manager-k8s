@@ -61,3 +61,22 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Name of the Secret holding CLUSTER_NAME, CONTROL_PLANE_ADDRESS and BASIC_AUTH_PASSWORD
+*/}}
+{{- define "permission-manager.secretName" -}}
+{{- if .Values.existingSecret }}
+{{- .Values.existingSecret }}
+{{- else }}
+{{- include "permission-manager.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Container image (the tag defaults to "v" + appVersion, the format used by the image registry)
+*/}}
+{{- define "permission-manager.image" -}}
+{{- $tag := .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}
+{{- printf "%s:%s" .Values.image.repository $tag }}
+{{- end }}

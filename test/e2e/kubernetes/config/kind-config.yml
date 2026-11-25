@@ -7,18 +7,14 @@ networking:
 
 nodes:
   - role: control-plane
+    # strategic merge patch: works with every kubeadm config API version (v1beta3, v1beta4, ...)
     kubeadmConfigPatches:
       - |
-        group: kubeadm.k8s.io
-        version: v1.34.0
         kind: ClusterConfiguration
-        patch: |
-          - op: add
-            path: /apiServer/certSANs/-
-            value: host.docker.internal
-          - op: add
-            path: /apiServer/certSANs/-
-            value: permission-manager
+        apiServer:
+          certSANs:
+            - host.docker.internal
+            - permission-manager
 containerdConfigPatches:
   - |-
     [debug]

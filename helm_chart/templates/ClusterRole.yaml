@@ -24,6 +24,18 @@ rules:
       - "serviceaccounts"
       - "secrets"
     verbs: [ "get", "list", "create", "update", "delete", "watch" ]
+  # Mint time-bound tokens for the users' ServiceAccounts (config.kubeconfig.tokenMode=tokenrequest)
+  - apiGroups: [""]
+    resources:
+      - "serviceaccounts/token"
+    verbs: [ "create" ]
+  # Read the API server CA bundle published in every namespace
+  - apiGroups: [""]
+    resources:
+      - "configmaps"
+    resourceNames:
+      - "kube-root-ca.crt"
+    verbs: [ "get" ]
   # Allow full management of certificates CSR, including their approval
   - apiGroups: [ "certificates.k8s.io" ]
     resources:
