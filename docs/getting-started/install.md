@@ -1,18 +1,72 @@
-# Installation
+# Install
 
-this guide refer to installing the permission manager on a running cluster
+Permission Manager runs as a single Deployment in its own namespace. It needs
+Kubernetes **1.24 or newer** (see [compatibility](../reference/compatibility.md)).
+
+You need three values for your cluster:
+
+| Value | Used for | Where to find it |
+|---|---|---|
+| Cluster name | Name of the cluster/context in the generated kubeconfigs | `kubectl config view --minify -o jsonpath='{.clusters[0].name}'` |
+| Control plane address | API server URL written in the generated kubeconfigs, as your users reach it | `kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'` |
+| Basic auth password | Password of the `admin` user of the UI | choose one, or [use an auth proxy](../configuration/authentication.md) |
+
+## Install with Helm
+
+The chart is published as an OCI artifact:
+
+```shell
+helm upgrade --install permission-manager \
+  oci://ghcr.io/jwklijnsma/charts/permission-manager \
+  --namespace permission-manager --create-namespace \
+  --set config.clusterName=my-cluster \
+  --set config.controlPlaneAddress=https://my-cluster.example.com:6443 \
+  --set config.basicAuthPassword=changeMe
+```
+
+Or with a values file:
+
+```yaml title="my-values.yaml"
+config:
+  clusterName: my-cluster
+  controlPlaneAddress: https://my-cluster.example.com:6443
+  basicAuthPassword: changeMe
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: permission-manager.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: permission-manager-tls
+      hosts:
+        - permission-manager.example.com
+```
+
+```shell
+helm upgrade --install permission-manager \
+  oci://ghcr.io/jwklijnsma/charts/permission-manager \
+  --namespace permission-manager --create-namespace --values my-values.yaml
+```
+
+!!! tip "Keep the password out of the Helm release"
+    Use [`existingSecret`](../configuration/secrets.md) to reference a Secret
+    you manage yourself (Sealed Secrets, External Secrets, SOPS...).
+
+All chart values: [Helm values](../reference/helm-values.md).
 
 ## Install with kubectl
 
-- Create the Namespace where the application will be deployed
+Create the namespace and the Secret with the configuration:
 
-``` shell
+```shell
 kubectl create namespace permission-manager
 ```
 
-- Deploy the application's secret using the manifest that you can find in `deployments/kubernetes/secret.yml` with the configuration for the application, for example:
-
-``` shell
+```yaml
 ---
 apiVersion: v1
 kind: Secret
@@ -27,31 +81,25 @@ stringData:
   BASIC_AUTH_PASSWORD: "changeMe" # password used by basic auth (username is `admin`)
 ```
 
-### Deploy the application
+Then apply the CRD, the default templates and the Deployment from this
+repository (`deployments/kubernetes/`):
 
-``` shell
-kubectl apply -f https://github.com/sighupio/permission-manager/releases/download/v1.9.0/crd.yml
-kubectl apply -f https://github.com/sighupio/permission-manager/releases/download/v1.9.0/seed.yml
-kubectl apply -f https://github.com/sighupio/permission-manager/releases/download/v1.9.0/deploy.yml
+```shell
+kubectl apply -f deployments/kubernetes/seeds/crd.yml
+kubectl apply -f deployments/kubernetes/seeds/seed.yml
+kubectl apply -f deployments/kubernetes/deploy.yml
 ```
 
-### Visit the application
+`deploy.yml` uses the image `ghcr.io/jwklijnsma/permission-manager-k8s:v1.10.0`.
 
-`kubectl port-forward svc/permission-manager 4000 --namespace permission-manager`
+## Open the UI
 
-> the application can now be accessed by <http://localhost:4000>
-
-## Install with Helm
-
-It is also possible to deploy Permission Manager using the [provided Helm Chart](/helm_chart).
-
-First create a values file, for example `my-values.yaml`, with your custom values for the release. See the [chart's readme](/helm_chart/README.md) and the [default values.yaml](/helm_chart/values.yaml) for more information.
-
-Then, execute:
-
-``` shell
-helm repo add permission-manager https://sighupio.github.io/permission-manager
-helm upgrade --install --namespace permission-manager --set image.tag=v1.9.0 --values my-values.yaml permission-manager permission-manager/permission-manager
+```shell
+# Helm install (service port 80)
+kubectl port-forward svc/permission-manager 4000:80 --namespace permission-manager
+# kubectl install (service port 4000)
+kubectl port-forward svc/permission-manager 4000:4000 --namespace permission-manager
 ```
 
-> don't forget to replace `my-values.yaml` with the path to your values file.
+The application is now reachable on <http://localhost:4000> (user `admin`).
+Continue with the [quick start](quickstart.md).

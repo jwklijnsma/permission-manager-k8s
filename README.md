@@ -4,10 +4,13 @@
 
 Welcome to the **Permission Manager**! :tada: :tada:
 
-[![Build Status](https://ci.sighup.io/api/badges/sighupio/permission-manager/status.svg)](https://ci.sighup.io/sighupio/permission-manager)
-![Release](https://img.shields.io/github/v/release/sighupio/permission-manager?label=PM)
-![Slack](https://img.shields.io/badge/slack-@kubernetes/fury-yellow.svg?logo=slack)
-![License](https://img.shields.io/github/license/sighupio/permission-manager)
+[![ci](https://github.com/jwklijnsma/permission-manager-k8s/actions/workflows/ci.yml/badge.svg)](https://github.com/jwklijnsma/permission-manager-k8s/actions/workflows/ci.yml)
+[![docs](https://github.com/jwklijnsma/permission-manager-k8s/actions/workflows/docs.yml/badge.svg)](https://jwklijnsma.github.io/permission-manager-k8s/)
+![License](https://img.shields.io/github/license/jwklijnsma/permission-manager-k8s)
+
+> Maintained fork of [sighupio/permission-manager](https://github.com/sighupio/permission-manager).
+> Documentation: <https://jwklijnsma.github.io/permission-manager-k8s/> -
+> status of the upstream issues and PRs: [docs/reference/upstream-backlog.md](docs/reference/upstream-backlog.md).
 
 Permission Manager is an application developed by [SIGHUP](https://sighup.io) that enables a super-easy and user-friendly **RBAC management for Kubernetes**. If you are looking for a simple and intuitive way of managing your users within a Kubernetes cluster, this is the right place.
 
@@ -37,12 +40,20 @@ With Permission Manager, you can create users, assign namespaces/permissions, an
 
 ## Installation
 
-To deploy and run the Permission Manager on your cluster, follow the [installation guide](docs/installation.md)
+To deploy and run the Permission Manager on your cluster, follow the [installation guide](docs/getting-started/install.md).
+
+```shell
+helm upgrade --install permission-manager oci://ghcr.io/jwklijnsma/charts/permission-manager \
+  --namespace permission-manager --create-namespace \
+  --set config.clusterName=my-cluster \
+  --set config.controlPlaneAddress=https://my-cluster.example.com:6443 \
+  --set config.basicAuthPassword=changeMe
+```
 
 ## Development Setup
 
 We love contributions from the community :heart:.
-Learn [how-to-contribute](docs/how-to-contribute.md)
+Learn [how-to-contribute](docs/development/contributing.md)
 
 ## FAQ
 
@@ -71,7 +82,7 @@ Create a clusterrole starting with `template-namespaced-resources___` and apply 
 
 #### Default templates
 
-`developer` and `operation` default templates are located at deployments/kubernetes/seeds/seed.yml
+`developer` and `operation` default templates are located at deployments/kubernetes/seeds/seed.yml (and `config.templates` in the Helm chart)
 
 ### What is a user
 

@@ -8,11 +8,11 @@ In order to setup the development environment you need to install the requiremen
 
 - bats 1.8.2
 - ctlptl 0.8.16
-- golang 1.19
-- helm 3.11.1
+- golang 1.24
+- helm 3.19.0
 - jq 1.6
-- kind 0.17.0
-- kubectl >= 1.23.0
+- kind 0.30.0
+- kubectl >= 1.24.0
 - make 4.1
 - mkcert 1.4.4
 - nodejs 18.0.0
@@ -70,11 +70,11 @@ make dev-up CLUSTER_VERSION=<k8s-version>
 
 This command will:
 
-1. Setup the self-signed TLS certificates for the ingress to work (it install the CA certificate to your browser's trusted certificates) using [mkcert]("https://mkcert.org/")
+1. Setup the self-signed TLS certificates for the ingress to work (it install the CA certificate to your browser's trusted certificates) using [mkcert](https://github.com/FiloSottile/mkcert)
 
     > **IMPORTANT**: If you are using NixOS you need to add the CA certificate to the trusted certificates manually. You can find the CA certificate in the `certs` directory.
 
-2. Start the local Kubernetes cluster and Tilt using our provided [Tiltfile](/Tiltfile). Tilt will build and push the Permission Manager image and deploy it using the Helm chart into the cluster using the local environment variables declared in ```.envrc``` or ```.env-cluster``` file.
+2. Start the local Kubernetes cluster and Tilt using our provided `Tiltfile`. Tilt will build and push the Permission Manager image and deploy it using the Helm chart into the cluster using the local environment variables declared in ```.envrc``` or ```.env-cluster``` file.
 
 ### Access Permission Manager in your browser
 
@@ -92,31 +92,16 @@ make dev-down
 
 ## Testing
 
-### Unit Tests
-
-In order to run the server unit tests run `make test-unit`.
-> **NOTE**: You need to have a UI's build in the `static/build` directory to run the unit tests. You can build the UI using `make build-ui` command.
-
-### E2E Tests
-
-The E2E tests provide to create a k8s cluster using `helm` and `kind` to the version that you specify the `CLUSTER_VERSION`,`KIND_VERSION`, `HELM_VERSION` variables.
-
-So, Executing the `make test-e2e` command will create a kind cluster, install the CRDs, deploy the Permission Manager and run the E2E tests.
-
-```shell
-CLUSTER_NAME=<your cluster name> \
-CLUSTER_VERSION=<your cluster version> \
-KIND_VERSION=<your kind version> \
-HELM_VERSION=<your helm version> \
-make test-e2e
-```
+See [testing and CI](testing.md).
 
 ## Publish a new release
 
-To build and publish a new Permission Manager release run
+See [releasing](releasing.md).
+
+## Documentation
 
 ```shell
-bumpversion {mayor,minor,patch}
-git push
-git push --tags
+pip install -r requirements-docs.txt
+zensical serve            # http://localhost:8000
+zensical build --strict   # what CI runs
 ```
