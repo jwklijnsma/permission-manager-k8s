@@ -9,10 +9,13 @@ func createClusterRolebinding(c echo.Context) error {
 	ac := c.(*AppContext)
 
 	type Request struct {
-		ClusterRolebindingName string           `json:"clusterRolebindingName"`
-		Username               string           `json:"user"`
-		Subjects               []rbacv1.Subject `json:"subjects"`
-		RoleName               string           `json:"roleName"`
+		ClusterRolebindingName string `json:"clusterRolebindingName" validate:"required"`
+		// GeneratedForUser is the field sent by the web-client (same name as in create-rolebinding)
+		GeneratedForUser string `json:"generated_for_user"`
+		// Username is kept for backwards compatibility with older API clients
+		Username string           `json:"user"`
+		Subjects []rbacv1.Subject `json:"subjects" validate:"required"`
+		RoleName string           `json:"roleName" validate:"required"`
 	}
 	r := new(Request)
 
@@ -22,14 +25,17 @@ func createClusterRolebinding(c echo.Context) error {
 		return err
 	}
 
-	// This is only a workaround: https://github.com/sighupio/permission-manager/issues/140
-	var subjs []rbacv1.Subject
-	for _, s := range r.Subjects {
-		s.Namespace = ac.Config.Cluster.Namespace
-		subjs = append(subjs, s)
+	subjs, err := normalizeSubjects(r.Subjects, ac.Config.Cluster.Namespace, ac.Config.RBAC.AdditionalSubjectKinds)
+	if err != nil {
+		return ac.errorResponse(err.Error())
 	}
 
-	_, err = ac.ResourceManager.ClusterRoleBindingCreate(r.ClusterRolebindingName, r.Username, r.RoleName, subjs)
+	username := r.GeneratedForUser
+	if username == "" {
+		username = r.Username
+	}
+
+	_, err = ac.ResourceManager.ClusterRoleBindingCreate(r.ClusterRolebindingName, username, r.RoleName, subjs)
 
 	if err != nil {
 		return err
@@ -42,7 +48,7 @@ func deleteClusterRolebinding(c echo.Context) error {
 	ac := c.(*AppContext)
 
 	type Request struct {
-		RolebindingName string `json:"rolebindingName"`
+		RolebindingName string `json:"rolebindingName" validate:"required"`
 	}
 
 	r := new(Request)

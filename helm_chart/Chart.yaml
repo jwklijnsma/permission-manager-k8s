@@ -4,9 +4,11 @@ name: permission-manager
 description:
   A Helm chart for Permission Manager, a simple to use, web application
   that enables a super-easy and user-friendly RBAC management for Kubernetes.
-home: https://sighup.io
+home: https://jwklijnsma.github.io/permission-manager-k8s/
 sources:
+  - https://github.com/jwklijnsma/permission-manager-k8s
   - https://github.com/sighupio/permission-manager/
+kubeVersion: ">=1.24.0-0"
 icon: https://sighup.io/assets/sighup-logo-white.svg
 keywords:
   [
@@ -26,9 +28,31 @@ keywords:
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 0.1.1
+version: 0.2.0
 
-# This is the version number of the application being deployed. This version number should be
-# incremented each time you make changes to the application. Versions are not expected to
-# follow Semantic Versioning. They should reflect the version the application is using.
-appVersion: 1.0.0
+# Version of the application, without the "v" prefix (issue #169). The image tag defaults to
+# "v" + appVersion, which is the format used by the published container images.
+appVersion: "1.10.0"
+
+annotations:
+  artifacthub.io/license: BSD-3-Clause
+  artifacthub.io/category: security
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://jwklijnsma.github.io/permission-manager-k8s/
+    - name: Upstream
+      url: https://github.com/sighupio/permission-manager
+  artifacthub.io/images: |
+    - name: permission-manager
+      image: ghcr.io/jwklijnsma/permission-manager-k8s:v1.10.0
+  artifacthub.io/changes: |
+    - kind: fixed
+      description: Kubeconfig generation on Kubernetes >= 1.24 no longer returns empty tokens
+    - kind: added
+      description: TokenRequest based, time-bound kubeconfig tokens
+    - kind: added
+      description: existingSecret, secret annotations and optional basic auth
+    - kind: added
+      description: Optional User/Group subjects in generated bindings
+    - kind: fixed
+      description: appVersion format and image tag default

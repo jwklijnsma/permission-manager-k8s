@@ -1,0 +1,95 @@
+# permission-manager documentation - built with Zensical (https://zensical.org)
+#   pip install -r requirements-docs.txt
+#   zensical serve            # preview on http://localhost:8000
+#   zensical build --strict   # what CI runs
+
+[project]
+site_name = "Permission Manager"
+site_description = "User-friendly RBAC management for Kubernetes: create users, assign namespaces and permission templates, hand out kubeconfigs"
+site_url = "https://jwklijnsma.github.io/permission-manager-k8s/"
+repo_url = "https://github.com/jwklijnsma/permission-manager-k8s"
+repo_name = "jwklijnsma/permission-manager-k8s"
+edit_uri = "edit/main/docs/"
+copyright = "Permission Manager - originally by SIGHUP, BSD-3-Clause"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    { "Install" = "getting-started/install.md" },
+    { "Quick start" = "getting-started/quickstart.md" },
+    { "Upgrade" = "getting-started/upgrade.md" },
+  ] },
+  { "Use" = [
+    { "Users and kubeconfigs" = "usage/users.md" },
+    { "Templates" = "usage/templates.md" },
+    { "HTTP API and automation" = "usage/api.md" },
+  ] },
+  { "Configure" = [
+    { "Authentication" = "configuration/authentication.md" },
+    { "Kubeconfig tokens" = "configuration/kubeconfig-tokens.md" },
+    { "Binding subjects" = "configuration/subjects.md" },
+    { "Secrets" = "configuration/secrets.md" },
+  ] },
+  { "Reference" = [
+    { "Environment variables" = "reference/environment.md" },
+    { "Helm values" = "reference/helm-values.md" },
+    { "Kubernetes compatibility" = "reference/compatibility.md" },
+    { "Upstream issues and PRs" = "reference/upstream-backlog.md" },
+  ] },
+  { "Development" = [
+    { "Contributing" = "development/contributing.md" },
+    { "Testing and CI" = "development/testing.md" },
+    { "Releasing" = "development/releasing.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "search.highlight",
+]
+
+[project.theme.icon]
+logo = "simple/kubernetes"
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "light blue"
+toggle.icon = "material/weather-night"
+toggle.name = "Dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "light blue"
+toggle.icon = "material/weather-sunny"
+toggle.name = "Light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.snippets = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]

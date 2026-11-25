@@ -63,7 +63,18 @@ func deleteUser(c echo.Context) error {
 		return err
 	}
 
+	if !isValidUsername(r.Username) {
+		return ac.errorResponse(invalidUsernameError)
+	}
+
 	err = ac.ResourceManager.V1Alpha1PermissionManagerUser.Delete(r.Username)
+
+	if err != nil {
+		return err
+	}
+
+	// remove the ServiceAccount (and its token Secret) so kubeconfigs issued for this user stop working
+	err = ac.ResourceManager.ServiceAccountDelete(ac.Config.Cluster.Namespace, r.Username)
 
 	if err != nil {
 		return err

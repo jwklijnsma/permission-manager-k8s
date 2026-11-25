@@ -29,8 +29,6 @@ podAnnotations: {}
 podSecurityContext:
   fsGroup: 2000
 
-# Default values should not be used currently. It will result in a startup-error.
-servicePort: 8080
 securityContext:
   {}
   # capabilities:

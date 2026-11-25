@@ -13,10 +13,13 @@ spec:
       {{- include "permission-manager.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-    {{- with .Values.podAnnotations }}
       annotations:
+        {{- if not .Values.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-    {{- end }}
+        {{- end }}
       labels:
         {{- include "permission-manager.selectorLabels" . | nindent 8 }}
     spec:
@@ -31,16 +34,36 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "permission-manager.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: PORT
+              value: "4000"
+            {{- if not .Values.config.basicAuthEnabled }}
+            - name: BASIC_AUTH_DISABLED
+              value: "true"
+            {{- end }}
+            {{- with .Values.config.basicAuthUsername }}
+            - name: BASIC_AUTH_USERNAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.additionalSubjectKinds }}
+            - name: ADDITIONAL_SUBJECT_KINDS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            - name: KUBECONFIG_TOKEN_MODE
+              value: {{ .Values.config.kubeconfig.tokenMode | default "secret" | quote }}
+            {{- with .Values.config.kubeconfig.tokenExpiration }}
+            - name: KUBECONFIG_TOKEN_EXPIRATION
+              value: {{ . | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
-                name: {{ include "permission-manager.fullname" . }}
+                name: {{ include "permission-manager.secretName" . }}
           ports:
             - name: http
               containerPort: 4000

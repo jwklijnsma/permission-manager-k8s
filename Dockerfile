@@ -1,5 +1,5 @@
 ## UI ##
-FROM node:18-alpine3.17 as ui-builder
+FROM node:18-alpine AS ui-builder
 RUN mkdir /app
 COPY web-client /app
 
@@ -9,7 +9,7 @@ WORKDIR /app
 RUN yarn install && yarn build
 
 ## BACKEND ##
-FROM golang:1.19.5-alpine3.17 as go-base
+FROM golang:1.24-alpine AS go-base
 
 ENV GOCACHE=/tmp/.go/cache
 ENV GOMODCACHE=/tmp/.go/modcache
@@ -41,16 +41,16 @@ COPY cmd cmd
 COPY internal internal
 COPY static static
 
-FROM go-base as development
+FROM go-base AS development
 COPY --from=ui-builder /app/build /app/static/build
 
 ENTRYPOINT ["go", "run", "cmd/run-server.go"]
 
-FROM go-base as builder
+FROM go-base AS builder
 COPY --from=ui-builder /app/build /app/static/build
 RUN go build --tags=release -o permission-manager cmd/run-server.go
 
-FROM scratch as release
+FROM scratch AS release
 
 WORKDIR /app
 COPY --from=builder /app/permission-manager /app/permission-manager

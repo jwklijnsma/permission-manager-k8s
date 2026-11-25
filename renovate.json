@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "labels": ["dependencies"],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+  "packageRules": [
+    {
+      "description": "Kubernetes Go libraries move together",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["k8s.io/**", "sigs.k8s.io/controller-runtime"],
+      "groupName": "kubernetes go libraries"
+    },
+    {
+      "description": "Web-client npm packages: one PR for all minor and patch bumps",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "web-client dependencies"
+    },
+    {
+      "description": "GitHub Actions: one PR for all minor and patch bumps",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "The docs site (requirements-docs.txt)",
+      "matchFileNames": ["requirements-docs.txt"],
+      "commitMessageTopic": "docs dependency {{depName}}"
+    }
+  ]
+}

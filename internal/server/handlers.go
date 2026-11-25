@@ -69,7 +69,7 @@ func listRbac(c echo.Context) error {
 
 func checkLegacyUser(c echo.Context) error {
 	type Request struct {
-		Username   string   `json:"username"`
+		Username   string   `json:"username" validate:"required"`
 		Namespaces []string `json:"namespaces"`
 	}
 
@@ -85,6 +85,10 @@ func checkLegacyUser(c echo.Context) error {
 
 	if err != nil {
 		return err
+	}
+
+	if !isValidUsername(r.Username) {
+		return ac.errorResponse(invalidUsernameError)
 	}
 
 	// if no namespace is set we set the value ["default"]
@@ -118,7 +122,7 @@ func checkLegacyUser(c echo.Context) error {
 
 func createKubeconfig(c echo.Context) error {
 	type Request struct {
-		Username  string `json:"username"`
+		Username  string `json:"username" validate:"required"`
 		Namespace string `json:"namespace"`
 	}
 	type Response struct {
@@ -134,12 +138,20 @@ func createKubeconfig(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if !isValidUsername(r.Username) {
+		return ac.errorResponse(invalidUsernameError)
+	}
+
 	// if no namespace is set we set the value "default"
 	if r.Namespace == "" {
 		r.Namespace = "default"
 	}
 
-	kubeCfg := ac.ResourceManager.ServiceAccountCreateKubeConfigForUser(ac.Config.Cluster, r.Username, r.Namespace)
+	kubeCfg, err := ac.ResourceManager.ServiceAccountCreateKubeConfigForUser(ac.Config.Cluster, ac.Config.Kubeconfig, r.Username, r.Namespace)
+	if err != nil {
+		c.Logger().Errorf("kubeconfig generation for user %s failed: %v", r.Username, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, ErrorRes{Error: "kubeconfig generation failed: " + err.Error()})
+	}
 
 	return c.JSON(http.StatusOK, Response{Ok: true, Kubeconfig: kubeCfg})
 }

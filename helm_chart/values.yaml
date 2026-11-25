@@ -5,10 +5,10 @@
 replicaCount: 1
 
 image:
-  repository: quay.io/sighup/permission-manager
+  repository: ghcr.io/jwklijnsma/permission-manager-k8s
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: "v1.9.0"
+  # Overrides the image tag whose default is "v" + the chart appVersion (e.g. v1.10.0).
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
@@ -28,8 +28,6 @@ podAnnotations: {}
 podSecurityContext:
   fsGroup: 2000
 
-# Default values should not be used currently. It will result in a startup-error.
-servicePort: 8080
 securityContext:
   {}
   # capabilities:
@@ -49,8 +47,10 @@ service:
 # - If you want to use TLS (https) for the web interface, just uncomment the "tls" part and add create the secret in the correct namespace.
 # - If you're using cert-manager.io to provision your certificates, just uncomment "cert-manager.io/cluster-issuer" and type the name of your cluster-issuer. Please also uncomment the "tls" part with default values.
 ingress:
-  enabled: true
-  annotations:
+  enabled: false
+  # Name of the IngressClass to use (e.g. nginx)
+  className: ""
+  annotations: {}
     # kubernetes.io/ingress.class: nginx
     # cert-manager.io/cluster-issuer: my-cluster-issuer
   hosts:
@@ -89,6 +89,15 @@ tolerations: []
 
 affinity: {}
 
+# Name of an existing Secret containing CLUSTER_NAME, CONTROL_PLANE_ADDRESS and (when basic auth is
+# enabled) BASIC_AUTH_PASSWORD. When set, the chart does not create its own Secret and
+# config.clusterName, config.controlPlaneAddress and config.basicAuthPassword are ignored (issue #171).
+existingSecret: ""
+
+secret:
+  # Annotations to add to the Secret created by the chart (issue #170), e.g. for reloader or sealed-secrets
+  annotations: {}
+
 #
 # Application configuration:
 config:
@@ -98,8 +107,32 @@ config:
   # Can be found in /etc/kubernetes/admin.conf: clusters -> cluster -> server
   controlPlaneAddress: ""
 
+  # Protect the UI and the API with HTTP basic auth (issue #190).
+  # Only disable it when Permission Manager is exposed exclusively behind an authenticating proxy
+  # (e.g. oauth2-proxy): anyone who can reach it can grant themselves cluster permissions.
+  basicAuthEnabled: true
+
+  # Username for basic auth to access the UI (defaults to "admin")
+  basicAuthUsername: ""
+
   # Password for basic auth to access the UI
   basicAuthPassword: ""
+
+  # Extra RBAC subject kinds added, with the permission-manager username as name, to every generated
+  # RoleBinding / ClusterRoleBinding, next to the user ServiceAccount (issues #117, #41, #91, PR #194).
+  # Useful when users also authenticate through OIDC or client certificates. Allowed: User, Group.
+  additionalSubjectKinds: []
+  #  - User
+
+  kubeconfig:
+    # How the token of the generated kubeconfigs is obtained (issue #168):
+    #  - secret:       a "kubernetes.io/service-account-token" Secret is created for the user
+    #                  ServiceAccount; the token does not expire (default, previous behaviour)
+    #  - tokenrequest: a time-bound token is requested through the TokenRequest API
+    tokenMode: secret
+    # Validity of the tokens generated with tokenMode=tokenrequest (Go duration, min 10m).
+    # The API server may cap it with --service-account-max-token-expiration.
+    tokenExpiration: 8760h
 
   templates:
     - name: operation
