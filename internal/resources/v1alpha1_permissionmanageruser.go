@@ -15,7 +15,7 @@ type V1Alpha1PermissionManagerUser struct {
 	context    context.Context
 }
 
-// User is the API exposed data of a PermissionManagerUser resource. TODO deprecate.
+// User is the API exposed data of a PermissionManagerUser resource. Deprecated: Use UserV2 instead.
 type User struct {
 	Name string `json:"name"`
 }

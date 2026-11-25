@@ -29,7 +29,7 @@ podSecurityContext:
   fsGroup: 2000
 
 # Default values should not be used currently. It will result in a startup-error.
-# TODO: correct default values should be placed here.
+servicePort: 8080
 securityContext:
   {}
   # capabilities:
@@ -49,7 +49,7 @@ service:
 # - If you want to use TLS (https) for the web interface, just uncomment the "tls" part and add create the secret in the correct namespace.
 # - If you're using cert-manager.io to provision your certificates, just uncomment "cert-manager.io/cluster-issuer" and type the name of your cluster-issuer. Please also uncomment the "tls" part with default values.
 ingress:
-  enabled: false
+  enabled: true
   annotations:
     # kubernetes.io/ingress.class: nginx
     # cert-manager.io/cluster-issuer: my-cluster-issuer

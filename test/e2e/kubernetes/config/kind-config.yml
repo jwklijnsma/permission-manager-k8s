@@ -10,7 +10,7 @@ nodes:
     kubeadmConfigPatches:
       - |
         group: kubeadm.k8s.io
-        version: v1beta1
+        version: v1.34.0
         kind: ClusterConfiguration
         patch: |
           - op: add

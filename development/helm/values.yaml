@@ -30,7 +30,7 @@ podSecurityContext:
   fsGroup: 2000
 
 # Default values should not be used currently. It will result in a startup-error.
-# TODO: correct default values should be placed here.
+servicePort: 8080
 securityContext:
   {}
   # capabilities:
